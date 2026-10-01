@@ -43,6 +43,33 @@ entry is `admin` / `password`; **replace or remove it before use**.
 
 To log out, visit `/comfyui-auth/logout`.
 
+### API keys
+
+For programmatic access, configure API keys separately from usernames. Copy
+the example and add one key per line:
+
+```bash
+cp apikeys.conf.example apikeys.conf
+```
+
+Each line is an optional label, `=`, and the plaintext API key:
+
+```ini
+comfy-ui = ***
+```
+
+A bare key on its own line is also accepted (no label). Blank lines and lines
+beginning with `#` or `;` are ignored. Put a key in either of the following
+request headers to authenticate:
+
+- `X-API-Key: <your-api-key>`
+- `Authorization: Bearer <your-api-key>`
+
+The API key path runs before the login/session flow, so it works for any API
+endpoint (`/prompt`, `/view`, `/object_info`, history, WebSockets, …).
+The keys file is loaded on every request, so adding or removing a key takes
+effect immediately without restarting ComfyUI.
+
 ### LDAP users
 
 Copy and edit the dedicated LDAP configuration file:

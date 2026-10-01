@@ -22,6 +22,10 @@ class LDAPConfigError(ValueError):
     """Raised when ldap.conf exists but is invalid."""
 
 
+class ApiKeysConfigError(ValueError):
+    """Raised when apikeys.conf exists but is invalid."""
+
+
 @dataclass(frozen=True)
 class LDAPConfig:
     server: str
@@ -157,6 +161,66 @@ def verify_credentials(users: Mapping[str, str], username: str, password: str) -
     supplied = password_sha256(password)
     valid = hmac.compare_digest(expected, supplied)
     return valid and username in users
+
+
+def load_api_keys(path: Path) -> dict[str, str]:
+    """Load API keys from an ``apikeys.conf`` file.
+
+    Each entry is ``label = key`` where ``label`` is an optional reference
+    name; a bare key on its own line (no ``=``) is also accepted (no label).
+    Keys are stored as plaintext and compared directly at verify time. Blank
+    lines and lines beginning with ``#`` or ``;`` are ignored. Returns a
+    mapping of {raw_key: label}.
+    """
+    if not path.is_file():
+        raise ApiKeysConfigError(f"API key configuration file does not exist: {path}")
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise ApiKeysConfigError(f"Cannot read API key configuration: {exc}") from exc
+
+    keys: dict[str, str] = {}
+    errors: list[str] = []
+    for line_number, raw_line in enumerate(lines, 1):
+        line = raw_line.strip()
+        if not line or line.startswith("#") or line.startswith(";"):
+            continue
+        label, separator, stored = line.partition("=")
+        if separator:
+            stored = stored.strip()
+            label = label.strip()
+        else:
+            stored = line.strip()
+            label = ""
+
+        if not stored:
+            errors.append(f"line {line_number}: key is empty")
+        elif stored in keys:
+            errors.append(f"line {line_number}: duplicate key")
+        else:
+            keys[stored] = label
+
+    if errors:
+        raise ApiKeysConfigError(
+            "Invalid API key configuration(" + "; ".join(errors) + ")"
+        )
+    if not keys:
+        raise ApiKeysConfigError(f"No API keys are configured in {path}")
+    return keys
+
+
+def verify_api_key(api_key: str | None, keys: Mapping[str, str]) -> bool:
+    """Return True if *api_key* matches one of the configured API keys.
+
+    Keys are stored as raw plaintext and compared against the presented key
+    using constant-time comparison; no hashing is performed.
+    """
+    if not api_key or not keys:
+        return False
+    for stored in keys:
+        if hmac.compare_digest(stored, api_key):
+            return True
+    return False
 
 
 class SessionSigner:
